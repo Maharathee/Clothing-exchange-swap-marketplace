@@ -1,0 +1,30 @@
+# Deployment Guide
+
+## Option A — Vercel frontend
+1. Create a GitHub repository and upload the `frontend` folder contents (or the complete project).
+2. In Vercel, import the repository.
+3. Set Root Directory to `frontend`.
+4. Build Command: `npm run build`
+5. Output Directory: `dist`
+6. Deploy.
+7. Copy the live URL into the Project Deployed Link field.
+
+## Option B — Render backend
+1. Create a MongoDB Atlas database and copy its connection string.
+2. Create a Render Web Service from the `backend` folder.
+3. Build command: `npm install`
+4. Start command: `npm start`
+5. Add environment variables:
+   MONGO_URI = your MongoDB Atlas connection string
+   JWT_SECRET = a long random secret
+6. Deploy and copy the API URL.
+
+## GitHub
+```bash
+git init
+git add .
+git commit -m "Initial ClothLoop project"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/clothing-swap-marketplace.git
+git push -u origin main
+```
