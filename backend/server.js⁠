@@ -1,0 +1,63 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+dotenv.config();
+const app=express();
+app.use(cors());
+app.use(express.json());
+
+const userSchema=new mongoose.Schema({
+  name:String,email:{type:String,unique:true},password:String,location:String,role:{type:String,default:"user"}
+},{timestamps:true});
+const itemSchema=new mongoose.Schema({
+  owner:{type:mongoose.Schema.Types.ObjectId,ref:"User"},title:String,category:String,brand:String,
+  size:String,condition:String,value:Number,location:String,image:String,description:String,status:{type:String,default:"available"}
+},{timestamps:true});
+const swapSchema=new mongoose.Schema({
+  sender:{type:mongoose.Schema.Types.ObjectId,ref:"User"},receiver:{type:mongoose.Schema.Types.ObjectId,ref:"User"},
+  offeredItem:{type:mongoose.Schema.Types.ObjectId,ref:"Item"},requestedItem:{type:mongoose.Schema.Types.ObjectId,ref:"Item"},
+  status:{type:String,default:"pending"},message:String
+},{timestamps:true});
+const User=mongoose.model("User",userSchema), Item=mongoose.model("Item",itemSchema), Swap=mongoose.model("Swap",swapSchema);
+
+function auth(req,res,next){
+  const token=req.headers.authorization?.replace("Bearer ","");
+  try{req.user=jwt.verify(token,process.env.JWT_SECRET||"change-me");next();}
+  catch{return res.status(401).json({message:"Unauthorized"});}
+}
+app.get("/api/health",(req,res)=>res.json({ok:true,service:"ClothLoop API"}));
+
+app.post("/api/auth/register",async(req,res)=>{
+  try{
+    const {name,email,password,location}=req.body;
+    if(!name||!email||!password)return res.status(400).json({message:"Missing fields"});
+    const exists=await User.findOne({email}); if(exists)return res.status(409).json({message:"Email already exists"});
+    const hash=await bcrypt.hash(password,12); const u=await User.create({name,email,password:hash,location});
+    const token=jwt.sign({id:u._id,role:u.role},process.env.JWT_SECRET||"change-me",{expiresIn:"7d"});
+    res.json({token,user:{id:u._id,name:u.name,email:u.email,location:u.location,role:u.role}});
+  }catch(e){res.status(500).json({message:e.message});}
+});
+app.post("/api/auth/login",async(req,res)=>{
+  try{
+    const {email,password}=req.body; const u=await User.findOne({email});
+    if(!u||!(await bcrypt.compare(password,u.password)))return res.status(401).json({message:"Invalid credentials"});
+    const token=jwt.sign({id:u._id,role:u.role},process.env.JWT_SECRET||"change-me",{expiresIn:"7d"});
+    res.json({token,user:{id:u._id,name:u.name,email:u.email,location:u.location,role:u.role}});
+  }catch(e){res.status(500).json({message:e.message});}
+});
+app.get("/api/items",async(req,res)=>{const q={}; if(req.query.category)q.category=req.query.category;if(req.query.location)q.location=req.query.location;res.json(await Item.find(q).populate("owner","name location"));});
+app.post("/api/items",auth,async(req,res)=>{const item=await Item.create({...req.body,owner:req.user.id});res.status(201).json(item);});
+app.patch("/api/items/:id",auth,async(req,res)=>{res.json(await Item.findOneAndUpdate({_id:req.params.id,owner:req.user.id},req.body,{new:true}));});
+app.delete("/api/items/:id",auth,async(req,res)=>{await Item.deleteOne({_id:req.params.id,owner:req.user.id});res.json({ok:true});});
+app.post("/api/swaps",auth,async(req,res)=>{res.status(201).json(await Swap.create({...req.body,sender:req.user.id}));});
+app.get("/api/swaps",auth,async(req,res)=>{res.json(await Swap.find({$or:[{sender:req.user.id},{receiver:req.user.id}]}).populate("sender receiver offeredItem requestedItem"));});
+app.patch("/api/swaps/:id",auth,async(req,res)=>{res.json(await Swap.findByIdAndUpdate(req.params.id,{status:req.body.status},{new:true}));});
+
+const PORT=process.env.PORT||5000;
+mongoose.connect(process.env.MONGO_URI||"mongodb://127.0.0.1:27017/clothloop")
+.then(()=>app.listen(PORT,()=>console.log(`ClothLoop API running on ${PORT}`)))
+.catch(err=>{console.error("MongoDB connection failed:",err.message);console.log("Start MongoDB or set MONGO_URI in .env");});
